@@ -13,7 +13,7 @@ export default function Studio({ session, onLeave }) {
   const [guestLinkCopied, setGuestLinkCopied] = useState(false);
   const [recordingStatus, setRecordingStatus] = useState('');
   const [joined, setJoined] = useState(false);
-  const [permissionError, setPermissionError] = useState('');
+  const [error, setError] = useState('');
   const videoRefs = useRef({});
 
   const updateParticipants = useCallback((call) => {
@@ -23,29 +23,37 @@ export default function Studio({ session, onLeave }) {
 
   useEffect(() => {
     let call;
+    let localStream;
 
     const init = async () => {
+      // Get camera/mic once, release it, then let Daily handle it
       try {
-        await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        // Release it immediately so Daily can grab it
+        localStream.getTracks().forEach(track => track.stop());
       } catch (e) {
-        setPermissionError('Camera/mic access was denied. Please allow access in your browser and refresh.');
+        setError('Please allow camera and microphone access, then refresh.');
         return;
       }
 
       call = DailyIframe.createCallObject({
         dailyConfig: {
-          userMediaAudioConstraints: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-            sampleRate: 48000,
-            channelCount: 2,
-          },
-          userMediaVideoConstraints: {
-            width: { ideal: 1920, min: 1280 },
-            height: { ideal: 1080, min: 720 },
-            frameRate: { ideal: 60, min: 30 },
-          },
+          inputSettings: {
+            audio: {
+              settings: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+              }
+            },
+            video: {
+              settings: {
+                width: { ideal: 1920 },
+                height: { ideal: 1080 },
+                frameRate: { ideal: 60 },
+              }
+            }
+          }
         },
       });
 
@@ -70,8 +78,9 @@ export default function Studio({ session, onLeave }) {
           setRecordingStatus('Recording saved');
           setTimeout(() => setRecordingStatus(''), 3000);
         })
-        .on('camera-error', (e) => {
-          setPermissionError('Camera error: ' + (e?.errorMsg || 'unknown'));
+        .on('error', (e) => {
+          console.error('Daily error:', e);
+          setError('Connection error: ' + (e?.errorMsg || e?.message || JSON.stringify(e)));
         });
 
       try {
@@ -80,13 +89,15 @@ export default function Studio({ session, onLeave }) {
           userName: session.name,
         });
       } catch (e) {
-        const errMsg = e?.message || e?.errorMsg || JSON.stringify(e) || 'unknown'; setPermissionError('Failed to join: ' + errMsg);
+        console.error('Join failed:', e);
+        setError('Failed to join: ' + (e?.message || e?.errorMsg || JSON.stringify(e)));
       }
     };
 
     init();
 
     return () => {
+      if (localStream) localStream.getTracks().forEach(t => t.stop());
       if (call) call.destroy();
     };
   }, [session.roomUrl, session.name, updateParticipants]);
@@ -182,14 +193,14 @@ export default function Studio({ session, onLeave }) {
   const spotlightKey = spotlightId || (remoteParticipants.length > 0 ? remoteParticipants[0][0] : 'local');
   const spotlightParticipant = participants[spotlightKey];
 
-  if (permissionError) {
+  if (error) {
     return (
       <div className="studio">
         <div className="permission-error">
           <div className="perm-icon">🎥</div>
-          <h2>Camera & Mic Access Needed</h2>
-          <p>{permissionError}</p>
-          <button className="join-btn-perm" onClick={() => { setPermissionError(''); window.location.reload(); }}>
+          <h2>Something went wrong</h2>
+          <p>{error}</p>
+          <button className="join-btn-perm" onClick={() => { setError(''); window.location.reload(); }}>
             Try Again
           </button>
           <button className="leave-link" onClick={onLeave}>Go Back</button>
