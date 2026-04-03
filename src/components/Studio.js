@@ -6,7 +6,7 @@ export default function Studio({ session, onLeave }) {
   const callRef = useRef(null);
   const containerRef = useRef(null);
   const [participants, setParticipants] = useState({});
-  const [localParticipant, setLocalParticipant] = useState(null);
+
   const [isMuted, setIsMuted] = useState(false);
   const [isCamOff, setIsCamOff] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
@@ -19,7 +19,6 @@ export default function Studio({ session, onLeave }) {
   const updateParticipants = useCallback((call) => {
     const parts = call.participants();
     setParticipants({ ...parts });
-    if (parts.local) setLocalParticipant(parts.local);
   }, []);
 
   useEffect(() => {
