@@ -80,7 +80,7 @@ export default function Studio({ session, onLeave }) {
           userName: session.name,
         });
       } catch (e) {
-        setPermissionError('Failed to join room: ' + (e?.message || 'unknown error'));
+        const errMsg = e?.message || e?.errorMsg || JSON.stringify(e) || 'unknown'; setPermissionError('Failed to join: ' + errMsg);
       }
     };
 

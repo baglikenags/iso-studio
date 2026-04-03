@@ -5,14 +5,14 @@ import './App.css';
 
 function App() {
   const [session, setSession] = useState(null);
+  const [prefilledRoom, setPrefilledRoom] = useState('');
 
-  // Check URL for room param (guest joining via link)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const roomParam = params.get('room');
-    if (roomParam) {
-      // Pre-fill room name from URL
-      setSession(prev => prev ? prev : { prefilledRoom: roomParam });
+    // Only prefill if it looks like a real room name (not 'new' or empty)
+    if (roomParam && roomParam !== 'new' && roomParam.length > 2) {
+      setPrefilledRoom(roomParam);
     }
   }, []);
 
@@ -22,6 +22,7 @@ function App() {
 
   const handleLeave = () => {
     setSession(null);
+    setPrefilledRoom('');
     window.history.pushState({}, '', '/');
   };
 
@@ -29,7 +30,7 @@ function App() {
     return <Studio session={session} onLeave={handleLeave} />;
   }
 
-  return <JoinScreen onJoin={handleJoin} prefilledRoom={session?.prefilledRoom} />;
+  return <JoinScreen onJoin={handleJoin} prefilledRoom={prefilledRoom} />;
 }
 
 export default App;
