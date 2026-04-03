@@ -1,176 +1,43 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
-import DailyIframe from '@daily-co/daily-js';
+import React, { useEffect, useRef, useState } from 'react';
 import './Studio.css';
 
 export default function Studio({ session, onLeave }) {
+  const iframeRef = useRef(null);
   const callRef = useRef(null);
-  const [participants, setParticipants] = useState({});
-  const [isMuted, setIsMuted] = useState(false);
-  const [isCamOff, setIsCamOff] = useState(false);
-  const [isScreenSharing, setIsScreenSharing] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
-  const [spotlightId, setSpotlightId] = useState(null);
   const [guestLinkCopied, setGuestLinkCopied] = useState(false);
-  const [recordingStatus, setRecordingStatus] = useState('');
   const [joined, setJoined] = useState(false);
-  const [error, setError] = useState('');
-  const videoRefs = useRef({});
-
-  const updateParticipants = useCallback((call) => {
-    const parts = call.participants();
-    setParticipants({ ...parts });
-  }, []);
 
   useEffect(() => {
-    let call;
-    let localStream;
+    const DailyIframe = window.DailyIframe;
+    if (!DailyIframe || !iframeRef.current) return;
 
-    const init = async () => {
-      // Get camera/mic once, release it, then let Daily handle it
-      try {
-        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        // Release it immediately so Daily can grab it
-        localStream.getTracks().forEach(track => track.stop());
-      } catch (e) {
-        setError('Please allow camera and microphone access, then refresh.');
-        return;
-      }
+    const call = DailyIframe.wrap(iframeRef.current, {
+      showLeaveButton: false,
+      showFullscreenButton: true,
+      iframeStyle: {
+        width: '100%',
+        height: '100%',
+        border: 'none',
+        background: '#000',
+      },
+    });
 
-      call = DailyIframe.createCallObject({
-        dailyConfig: {
-          inputSettings: {
-            audio: {
-              settings: {
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true,
-              }
-            },
-            video: {
-              settings: {
-                width: { ideal: 1920 },
-                height: { ideal: 1080 },
-                frameRate: { ideal: 60 },
-              }
-            }
-          }
-        },
-      });
+    callRef.current = call;
 
-      callRef.current = call;
+    call
+      .on('joined-meeting', () => setJoined(true))
+      .on('left-meeting', () => onLeave());
 
-      call
-        .on('joined-meeting', () => {
-          setJoined(true);
-          updateParticipants(call);
-        })
-        .on('participant-joined', () => updateParticipants(call))
-        .on('participant-updated', () => updateParticipants(call))
-        .on('participant-left', () => updateParticipants(call))
-        .on('track-started', () => updateParticipants(call))
-        .on('track-stopped', () => updateParticipants(call))
-        .on('recording-started', () => {
-          setIsRecording(true);
-          setRecordingStatus('Recording...');
-        })
-        .on('recording-stopped', () => {
-          setIsRecording(false);
-          setRecordingStatus('Recording saved');
-          setTimeout(() => setRecordingStatus(''), 3000);
-        })
-        .on('error', (e) => {
-          console.error('Daily error:', e);
-          setError('Connection error: ' + (e?.errorMsg || e?.message || JSON.stringify(e)));
-        });
-
-      try {
-        await call.join({
-          url: session.roomUrl,
-          userName: session.name,
-        });
-      } catch (e) {
-        console.error('Join failed:', e);
-        setError('Failed to join: ' + (e?.message || e?.errorMsg || JSON.stringify(e)));
-      }
-    };
-
-    init();
+    call.join({
+      url: session.roomUrl,
+      userName: session.name,
+      showLeaveButton: false,
+    });
 
     return () => {
-      if (localStream) localStream.getTracks().forEach(t => t.stop());
-      if (call) call.destroy();
+      call.destroy();
     };
-  }, [session.roomUrl, session.name, updateParticipants]);
-
-  useEffect(() => {
-    if (!joined) return;
-    Object.entries(participants).forEach(([id, participant]) => {
-      const videoEl = document.getElementById('video-' + id);
-      if (videoEl) {
-        const track = participant.screenVideoTrack || participant.videoTrack;
-        if (track) {
-          try {
-            const stream = new MediaStream([track]);
-            videoEl.srcObject = stream;
-            videoEl.play().catch(() => {});
-          } catch (e) {}
-        }
-      }
-      if (id !== 'local') {
-        const audioEl = document.getElementById('audio-' + id);
-        if (audioEl && participant.audioTrack) {
-          try {
-            const stream = new MediaStream([participant.audioTrack]);
-            audioEl.srcObject = stream;
-            audioEl.play().catch(() => {});
-          } catch (e) {}
-        }
-      }
-    });
-  }, [participants, joined]);
-
-  const toggleMic = () => {
-    const call = callRef.current;
-    if (!call) return;
-    call.setLocalAudio(isMuted);
-    setIsMuted(!isMuted);
-  };
-
-  const toggleCam = () => {
-    const call = callRef.current;
-    if (!call) return;
-    call.setLocalVideo(isCamOff);
-    setIsCamOff(!isCamOff);
-  };
-
-  const toggleScreenShare = async () => {
-    const call = callRef.current;
-    if (!call) return;
-    try {
-      if (isScreenSharing) {
-        await call.stopScreenShare();
-        setIsScreenSharing(false);
-      } else {
-        await call.startScreenShare();
-        setIsScreenSharing(true);
-      }
-    } catch (e) {}
-  };
-
-  const toggleRecording = async () => {
-    const call = callRef.current;
-    if (!call) return;
-    try {
-      if (isRecording) {
-        await call.stopRecording();
-      } else {
-        await call.startRecording();
-      }
-    } catch (e) {
-      setRecordingStatus('Recording requires Daily paid plan');
-      setTimeout(() => setRecordingStatus(''), 4000);
-    }
-  };
+  }, [session.roomUrl, session.name, onLeave]);
 
   const copyGuestLink = () => {
     if (session.guestLink) {
@@ -183,31 +50,9 @@ export default function Studio({ session, onLeave }) {
   const handleLeave = () => {
     if (callRef.current) {
       callRef.current.leave();
-      callRef.current.destroy();
     }
     onLeave();
   };
-
-  const participantList = Object.entries(participants);
-  const remoteParticipants = participantList.filter(([id]) => id !== 'local');
-  const spotlightKey = spotlightId || (remoteParticipants.length > 0 ? remoteParticipants[0][0] : 'local');
-  const spotlightParticipant = participants[spotlightKey];
-
-  if (error) {
-    return (
-      <div className="studio">
-        <div className="permission-error">
-          <div className="perm-icon">🎥</div>
-          <h2>Something went wrong</h2>
-          <p>{error}</p>
-          <button className="join-btn-perm" onClick={() => { setError(''); window.location.reload(); }}>
-            Try Again
-          </button>
-          <button className="leave-link" onClick={onLeave}>Go Back</button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="studio">
@@ -221,12 +66,6 @@ export default function Studio({ session, onLeave }) {
             <span className="room-dot" />
             LIVE · {session.roomName}
           </div>
-          {recordingStatus && (
-            <div className={'rec-status' + (isRecording ? ' recording' : '')}>
-              {isRecording && <span className="rec-dot" />}
-              {recordingStatus}
-            </div>
-          )}
         </div>
         <div className="header-actions">
           {session.role === 'producer' && session.guestLink && (
@@ -234,101 +73,30 @@ export default function Studio({ session, onLeave }) {
               {guestLinkCopied ? '✓ Copied!' : '🔗 Invite Guests'}
             </button>
           )}
-          <div className="participant-count">👥 {participantList.length}</div>
+          <button className="ctrl-btn ctrl-leave" onClick={handleLeave} style={{padding: '6px 14px', fontSize: '13px'}}>
+            📴 Leave
+          </button>
         </div>
       </div>
 
-      <div className="studio-body">
-        <div className="spotlight-area">
-          {spotlightParticipant ? (
-            <div className="spotlight-video-wrap">
-              <video
-                id={'video-' + spotlightKey}
-                autoPlay
-                playsInline
-                muted={spotlightKey === 'local'}
-                className="spotlight-video"
-                ref={el => { if (el) videoRefs.current[spotlightKey] = el; }}
-              />
-              <div className="spotlight-name">
-                {spotlightParticipant.user_name || 'Guest'}
-                {spotlightKey === 'local' && ' (You)'}
-              </div>
-            </div>
-          ) : (
-            <div className="waiting-state">
-              <div className="waiting-icon">🎙</div>
-              <p>{joined ? 'Waiting for guests to join...' : 'Connecting...'}</p>
-              {session.role === 'producer' && session.guestLink && joined && (
-                <button className="invite-btn-large" onClick={copyGuestLink}>
-                  {guestLinkCopied ? '✓ Link Copied!' : 'Copy Invite Link'}
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className="side-panel">
-          <div className="panel-label">PARTICIPANTS</div>
-          <div className="tiles-grid">
-            {participantList.map(([id, participant]) => (
-              <div
-                key={id}
-                className={'tile' + (spotlightKey === id ? ' tile-spotlit' : '')}
-                onClick={() => setSpotlightId(id === spotlightKey ? null : id)}
-              >
-                <video id={'video-' + id} autoPlay playsInline muted={id === 'local'} className="tile-video" />
-                {id !== 'local' && <audio id={'audio-' + id} autoPlay playsInline />}
-                <div className="tile-name">
-                  {participant.user_name || 'Guest'}{id === 'local' && ' (You)'}
-                </div>
-                {spotlightKey === id && <div className="tile-spotlight-badge">●</div>}
-              </div>
-            ))}
-          </div>
-
-          {session.role === 'producer' && session.guestLink && (
-            <div className="guest-link-panel">
-              <div className="panel-label">GUEST LINK</div>
-              <div className="link-box">
-                <span className="link-text">{session.guestLink}</span>
-              </div>
-              <button className="copy-link-btn" onClick={copyGuestLink}>
-                {guestLinkCopied ? '✓ Copied!' : 'Copy Link'}
-              </button>
-            </div>
-          )}
-        </div>
+      <div className="iframe-wrap">
+        <iframe
+          ref={iframeRef}
+          title="ISO Studio"
+          allow="camera; microphone; fullscreen; display-capture; autoplay"
+          style={{ width: '100%', height: '100%', border: 'none' }}
+        />
       </div>
 
-      <div className="controls-bar">
-        <div className="controls-left">
-          <span className="controls-role">{session.role === 'producer' ? '🎙 Producer' : '🎧 Guest'}</span>
-          <span className="controls-name">{session.name}</span>
-        </div>
-        <div className="controls-center">
-          <button className={'ctrl-btn' + (isMuted ? ' ctrl-off' : '')} onClick={toggleMic}>
-            {isMuted ? '🔇' : '🎤'}<span>{isMuted ? 'Unmute' : 'Mute'}</span>
-          </button>
-          <button className={'ctrl-btn' + (isCamOff ? ' ctrl-off' : '')} onClick={toggleCam}>
-            {isCamOff ? '📵' : '📹'}<span>{isCamOff ? 'Start Cam' : 'Stop Cam'}</span>
-          </button>
-          <button className={'ctrl-btn' + (isScreenSharing ? ' ctrl-active' : '')} onClick={toggleScreenShare}>
-            🖥<span>{isScreenSharing ? 'Stop Share' : 'Share'}</span>
-          </button>
-          {session.role === 'producer' && (
-            <button className={'ctrl-btn' + (isRecording ? ' ctrl-recording' : '')} onClick={toggleRecording}>
-              {isRecording ? '⏹' : '⏺'}<span>{isRecording ? 'Stop Rec' : 'Record'}</span>
-            </button>
-          )}
-          <button className="ctrl-btn ctrl-leave" onClick={handleLeave}>
-            📴<span>Leave</span>
+      {session.role === 'producer' && session.guestLink && (
+        <div className="guest-link-bar">
+          <span className="guest-link-label">Guest link:</span>
+          <span className="guest-link-url">{session.guestLink}</span>
+          <button className="copy-link-btn" onClick={copyGuestLink}>
+            {guestLinkCopied ? '✓ Copied!' : 'Copy'}
           </button>
         </div>
-        <div className="controls-right">
-          <div className="quality-indicator"><span className="quality-dot" />HD</div>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
