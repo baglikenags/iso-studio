@@ -224,3 +224,10 @@
   font-size: 12px;
   color: #444;
 }
+
+.room-name-hint {
+  font-size: 11px;
+  color: var(--accent);
+  margin-top: 5px;
+  padding: 0 2px;
+}
